@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="si" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Web Realtime Chat</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        wa: {
+                            teal: '#008069',
+                            header: '#f0f2f5',
+                            bg: '#efeae2',
+                            outgoing: '#d9fdd3',
+                            incoming: '#ffffff',
+                            icon: '#54656f',
+                            accent: '#128c7e'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chat-wallpaper {
+            background-color: #efeae2;
+            background-image: radial-gradient(#000000 0.5px, transparent 0.5px), radial-gradient(#000000 0.5px, #efeae2 0.5px);
+            background-size: 20px 20px;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cccccc; border-radius: 10px; }
+    </style>
+</head>
+<body class="h-full bg-slate-200 flex items-center justify-center p-0 md:p-4 select-none">
+
+    <div class="w-full max-w-5xl h-full md:h-[95vh] bg-white rounded-none md:rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-300">
+        
+        <!-- Header -->
+        <header class="bg-wa-header border-b border-slate-300 px-4 py-2.5 flex items-center justify-between z-10 flex-shrink-0">
+            <div class="flex items-center space-x-3">
+                <div class="relative">
+                    <div class="w-10 h-10 rounded-full bg-wa-teal text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                        <i class="fa-solid fa-users text-sm"></i>
+                    </div>
+                    <span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
+                </div>
+                <div>
+                    <h2 class="font-semibold text-slate-800 text-sm md:text-base flex items-center gap-2">
+                        <span>Shared Chat Room</span>
+                        <span id="room-tag" class="text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-mono">#room1</span>
+                    </h2>
+                    <p id="connection-status" class="text-xs text-slate-500">Connecting to cloud...</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2 text-wa-icon">
+                <button onclick="copyRoomLink()" class="p-2 hover:bg-slate-200/80 rounded-full transition text-slate-600 flex items-center gap-1.5 text-xs font-medium" title="Share Link">
+                    <i class="fa-regular fa-copy text-sm"></i>
+                    <span class="hidden sm:inline">Share Link</span>
+                </button>
+                <button onclick="promptChangeRoom()" class="p-2 hover:bg-slate-200/80 rounded-full transition text-slate-600" title="Change Room">
+                    <i class="fa-solid fa-door-open text-sm"></i>
+                </button>
+                <button onclick="clearAllMessages()" class="p-2 hover:bg-rose-100 text-rose-600 rounded-full transition" title="Clear Chat">
+                    <i class="fa-solid fa-trash-can text-sm"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Chat Area -->
+        <main class="flex-1 overflow-y-auto chat-wallpaper p-4 space-y-3 flex flex-col" id="chat-messages">
+            <div class="text-center my-2">
+                <span class="bg-amber-100 text-amber-800 text-[11px] px-3 py-1 rounded-md shadow-sm border border-amber-200 inline-flex items-center gap-1.5">
+                    <i class="fa-solid fa-lock text-[10px]"></i> Real-time cloud sync active. Share this link with your friend!
+                </span>
+            </div>
+        </main>
+
+        <!-- Message Input Footer -->
+        <footer class="bg-wa-header border-t border-slate-300 p-3 flex-shrink-0">
+            <form id="chat-form" onsubmit="handleSend(event)" class="flex items-center space-x-2">
+                <input id="message-input" type="text" placeholder="Type a message / පණිවිඩයක් ටයිප් කරන්න..." autocomplete="off" class="flex-1 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-wa-teal transition text-slate-800">
+                <button type="submit" class="bg-wa-teal hover:bg-wa-accent text-white w-10 h-10 rounded-full flex items-center justify-center transition shadow-md flex-shrink-0 active:scale-95">
+                    <i class="fa-solid fa-paper-plane text-sm"></i>
+                </button>
+            </form>
+        </footer>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Environment configs or fallback for public testing
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'shared-chat-app-sahan';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyDummyKeyForCloudSync99",
+            authDomain: "shared-chat.firebaseapp.com",
+            projectId: "shared-chat-db",
+            storageBucket: "shared-chat.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUserId = null;
+        let urlParams = new URLSearchParams(window.location.search);
+        let roomId = urlParams.get('room') ? urlParams.get('room').trim().toLowerCase() : 'room1';
+        document.getElementById('room-tag').innerText = '#' + roomId;
+
+        // Anonymous auth for secure cloud session
+        signInAnonymously(auth).catch(err => console.error("Auth error:", err));
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                document.getElementById('connection-status').innerText = `Online (${currentUserId.slice(0, 4)})`;
+                listenToMessages();
+            }
+        });
+
+        let unsubscribe = null;
+        function listenToMessages() {
+            if (unsubscribe) unsubscribe();
+
+            const colRef = collection(db, 'artifacts', appId, 'public', 'data', `chat_room_${roomId}`);
+            
+            unsubscribe = onSnapshot(colRef, (snapshot) => {
+                let messages = [];
+                snapshot.forEach(docSnap => {
+                    messages.push({ id: docSnap.id, ...docSnap.data() });
+                });
+
+                messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                renderMessages(messages);
+            }, (error) => {
+                console.error("Firestore error:", error);
+            });
+        }
+
+        function renderMessages(messages) {
+            const container = document.getElementById('chat-messages');
+            let statusBar = `<div class="text-center my-2"><span class="bg-amber-100 text-amber-800 text-[11px] px-3 py-1 rounded-md shadow-sm border border-amber-200 inline-flex items-center gap-1.5"><i class="fa-solid fa-lock text-[10px]"></i> Room: #${escapeHtml(roomId)}</span></div>`;
+
+            if (messages.length === 0) {
+                container.innerHTML = statusBar + `<div class="text-center text-slate-500 text-xs py-8">No messages yet. Say hi!</div>`;
+                return;
+            }
+
+            let html = statusBar;
+            messages.forEach(msg => {
+                const isMe = msg.senderId === currentUserId;
+                const timeStr = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now';
+
+                if (isMe) {
+                    html += `
+                        <div class="flex justify-end mb-2 group">
+                            <div class="relative bg-wa-outgoing text-slate-800 rounded-lg rounded-tr-none px-3 py-1.5 max-w-[75%] shadow-sm text-sm border border-emerald-100">
+                                <p class="break-words pr-12">${escapeHtml(msg.text)}</p>
+                                <div class="absolute bottom-1 right-2 flex items-center space-x-1 text-[10px] text-slate-500">
+                                    <span>${timeStr}</span>
+                                    <i class="fa-solid fa-check-double text-sky-600"></i>
+                                </div>
+                                <button onclick="deleteMsg('${msg.id}')" class="opacity-0 group-hover:opacity-100 transition absolute -left-6 top-1 text-slate-400 hover:text-rose-600">
+                                    <i class="fa-solid fa-trash text-xs"></i>
+                                </button>
+                            </div>
+                        </div>`;
+                } else {
+                    html += `
+                        <div class="flex justify-start mb-2 group">
+                            <div class="relative bg-wa-incoming text-slate-800 rounded-lg rounded-tl-none px-3 py-1.5 max-w-[75%] shadow-sm text-sm border border-slate-200">
+                                <span class="text-[10px] font-semibold text-emerald-700 block mb-0.5">Friend (${msg.senderId ? msg.senderId.slice(0, 4) : 'User'})</span>
+                                <p class="break-words pr-12">${escapeHtml(msg.text)}</p>
+                                <div class="absolute bottom-1 right-2 flex items-center space-x-1 text-[10px] text-slate-400">
+                                    <span>${timeStr}</span>
+                                </div>
+                            </div>
+                        </div>`;
+                }
+            });
+
+            container.innerHTML = html;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        window.handleSend = async function(e) {
+            e.preventDefault();
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if (!text || !currentUserId) return;
+
+            input.value = '';
+
+            try {
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', `chat_room_${roomId}`);
+                await addDoc(colRef, {
+                    text: text,
+                    senderId: currentUserId,
+                    createdAt: Date.now()
+                });
+            } catch (err) {
+                console.error("Send error:", err);
+            }
+        };
+
+        window.deleteMsg = async function(id) {
+            try {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `chat_room_${roomId}`, id));
+            } catch (err) {
+                console.error("Delete error:", err);
+            }
+        };
+
+        window.clearAllMessages = async function() {
+            if (!confirm("Clear all messages in this room?")) return;
+            try {
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', `chat_room_${roomId}`);
+                const snap = await getDocs(colRef);
+                const deletes = snap.docs.map(d => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `chat_room_${roomId}`, d.id)));
+                await Promise.all(deletes);
+            } catch (err) {
+                console.error("Clear error:", err);
+            }
+        };
+
+        window.promptChangeRoom = function() {
+            const r = prompt("Enter Room Name:", roomId);
+            if (r) {
+                window.location.search = `?room=${r.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')}`;
+            }
+        };
+
+        window.copyRoomLink = function() {
+            navigator.clipboard.writeText(window.location.href);
+            alert("Room link copied! Send this link to your friend.");
+        };
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    </script>
+</body>
+</html>
