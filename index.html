@@ -1,231 +1,781 @@
 <!DOCTYPE html>
-<html lang="si" class="h-full">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Web Realtime Chat</title>
+    <title>P2P Chat · 2 Person Real-time</title>
+    <meta name="description" content="Private peer-to-peer chat for 2 people. No server, no signup.">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome Icons -->
+
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-    
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- PeerJS (WebRTC wrapper) -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
                         wa: {
-                            teal: '#008069',
-                            header: '#f0f2f5',
-                            bg: '#efeae2',
-                            outgoing: '#d9fdd3',
-                            incoming: '#ffffff',
-                            icon: '#54656f',
-                            accent: '#128c7e'
+                            teal:    '#008069',
+                            accent:  '#128c7e',
+                            header:  '#f0f2f5',
+                            bg:      '#efeae2',
+                            outgoing:'#d9fdd3',
+                            incoming:'#ffffff',
+                            icon:    '#54656f'
                         }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif']
                     }
                 }
             }
         }
     </script>
+
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         .chat-wallpaper {
             background-color: #efeae2;
-            background-image: radial-gradient(#000000 0.5px, transparent 0.5px), radial-gradient(#000000 0.5px, #efeae2 0.5px);
+            background-image:
+                radial-gradient(#000000 0.5px, transparent 0.5px),
+                radial-gradient(#000000 0.5px, #efeae2 0.5px);
             background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
         }
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #cccccc; border-radius: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c5c5c5; border-radius: 10px; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .msg-in { animation: fadeIn .18s ease-out; }
+
+        @keyframes pulseDot {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+            40%           { transform: scale(1); opacity: 1; }
+        }
+        .typing-dot {
+            display: inline-block; width: 5px; height: 5px; margin: 0 1px;
+            border-radius: 50%; background: #6b7280;
+            animation: pulseDot 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
     </style>
 </head>
 <body class="h-full bg-slate-200 flex items-center justify-center p-0 md:p-4 select-none">
 
-    <div class="w-full max-w-5xl h-full md:h-[95vh] bg-white rounded-none md:rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-300">
-        
-        <!-- Header -->
-        <header class="bg-wa-header border-b border-slate-300 px-4 py-2.5 flex items-center justify-between z-10 flex-shrink-0">
-            <div class="flex items-center space-x-3">
-                <div class="relative">
-                    <div class="w-10 h-10 rounded-full bg-wa-teal text-white flex items-center justify-center font-bold text-lg shadow-sm">
-                        <i class="fa-solid fa-users text-sm"></i>
-                    </div>
-                    <span id="status-dot" class="absolute bottom-0 right-0 w-3 h-3 bg-amber-500 border-2 border-white rounded-full"></span>
-                </div>
-                <div>
-                    <h2 class="font-semibold text-slate-800 text-sm md:text-base flex items-center gap-2">
-                        <span>Shared Chat Room</span>
-                        <span id="room-tag" class="text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-mono">#room1</span>
-                    </h2>
-                    <p id="connection-status" class="text-xs text-slate-500">Connecting...</p>
-                </div>
-            </div>
-
-            <div class="flex items-center space-x-2 text-wa-icon">
-                <button onclick="copyRoomLink()" class="p-2 hover:bg-slate-200/80 rounded-full transition text-slate-600 flex items-center gap-1.5 text-xs font-medium" title="Share Link">
-                    <i class="fa-regular fa-copy text-sm"></i>
-                    <span class="hidden sm:inline">Share Link</span>
-                </button>
-                <button onclick="promptChangeRoom()" class="p-2 hover:bg-slate-200/80 rounded-full transition text-slate-600" title="Change Room">
-                    <i class="fa-solid fa-door-open text-sm"></i>
-                </button>
-                <button onclick="clearAllMessages()" class="p-2 hover:bg-rose-100 text-rose-600 rounded-full transition" title="Clear Chat">
-                    <i class="fa-solid fa-trash-can text-sm"></i>
-                </button>
-            </div>
-        </header>
-
-        <!-- Chat Area -->
-        <main class="flex-1 overflow-y-auto chat-wallpaper p-4 space-y-3 flex flex-col" id="chat-messages">
-            <div class="text-center my-2">
-                <span class="bg-amber-100 text-amber-800 text-[11px] px-3 py-1 rounded-md shadow-sm border border-amber-200 inline-flex items-center gap-1.5">
-                    <i class="fa-solid fa-circle-info text-[10px]"></i> Real-time sync ready! Share this link with your friend.
-                </span>
-            </div>
-        </main>
-
-        <!-- Message Input Footer -->
-        <footer class="bg-wa-header border-t border-slate-300 p-3 flex-shrink-0">
-            <form id="chat-form" onsubmit="handleSend(event)" class="flex items-center space-x-2">
-                <input id="message-input" type="text" placeholder="Type a message / පණිවිඩයක් ටයිප් කරන්න..." autocomplete="off" class="flex-1 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-wa-teal transition text-slate-800">
-                <button type="submit" class="bg-wa-teal hover:bg-wa-accent text-white w-10 h-10 rounded-full flex items-center justify-center transition shadow-md flex-shrink-0 active:scale-95">
-                    <i class="fa-solid fa-paper-plane text-sm"></i>
-                </button>
-            </form>
-        </footer>
+<!-- ═══════════════════════════════════════════════════════════════
+     SCREEN 1: LOBBY (Home)
+     ═══════════════════════════════════════════════════════════════ -->
+<div id="screen-lobby" class="w-full max-w-md bg-white rounded-xl shadow-2xl p-6 border border-slate-300">
+    <div class="text-center mb-6">
+        <div class="w-16 h-16 rounded-full bg-wa-teal text-white flex items-center justify-center mx-auto mb-3 shadow-lg">
+            <i class="fa-solid fa-comments text-2xl"></i>
+        </div>
+        <h1 class="text-xl font-semibold text-slate-800">P2P Chat</h1>
+        <p class="text-sm text-slate-500 mt-1">Private · No server · 2 persons only</p>
     </div>
 
-    <!-- Free Realtime Sync Script (PubNub / Socket free public channel) -->
-    <script>
-        let urlParams = new URLSearchParams(window.location.search);
-        let roomId = urlParams.get('room') ? urlParams.get('room').trim().toLowerCase() : 'room1';
-        document.getElementById('room-tag').innerText = '#' + roomId;
+    <div class="space-y-3">
+        <button onclick="createRoom()"
+            class="w-full bg-wa-teal hover:bg-wa-accent text-white py-3 rounded-lg font-medium transition shadow-md active:scale-[0.98]">
+            <i class="fa-solid fa-plus mr-2"></i> Create New Room
+        </button>
 
-        const myId = 'user_' + Math.random().toString(36).substr(2, 4);
-        let messages = [];
+        <div class="flex items-center gap-2 text-slate-400 text-xs my-2">
+            <hr class="flex-1 border-slate-200"> or <hr class="flex-1 border-slate-200">
+        </div>
 
-        // Using free public MQTT/WebSocket bridge for instant real-time sync
-        const channelName = 'whatsapp_chat_clone_' + roomId;
-        const subUrl = `https://ntfy.sh/${channelName}/json`;
-        const pubUrl = `https://ntfy.sh/${channelName}`;
+        <div>
+            <label class="text-xs font-medium text-slate-600 mb-1 block">Join with Room Code</label>
+            <div class="flex gap-2">
+                <input id="join-code-input" type="text" placeholder="ABC123" maxlength="6"
+                    class="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-sm uppercase tracking-widest text-center font-mono focus:outline-none focus:border-wa-teal focus:ring-1 focus:ring-wa-teal/30"
+                    autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+                <button onclick="joinRoom()"
+                    class="bg-slate-800 hover:bg-slate-900 text-white px-5 rounded-lg font-medium transition active:scale-95">
+                    Join
+                </button>
+            </div>
+        </div>
 
-        document.getElementById('connection-status').innerText = 'Online';
-        document.getElementById('status-dot').className = 'absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full';
+        <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-800 mt-4 flex gap-2">
+            <i class="fa-solid fa-shield-halved mt-0.5"></i>
+            <span><b>End-to-end:</b> Messages කෙලින්ම browser-to-browser. Server එකේ save වෙන්නේ නෑ.</span>
+        </div>
+    </div>
+</div>
 
-        // Listen for incoming messages in real-time
-        const eventSource = new EventSource(subUrl);
-        eventSource.onmessage = function (event) {
-            try {
-                const data = JSON.parse(event.data);
-                if (data && data.message) {
-                    const parsedMsg = JSON.parse(data.message);
-                    
-                    // Check if message already exists
-                    if (!messages.some(m => m.id === parsedMsg.id)) {
-                        messages.push(parsedMsg);
-                        renderMessages();
-                    }
-                }
-            } catch (e) {
-                console.error("Parse error:", e);
-            }
-        };
+<!-- ═══════════════════════════════════════════════════════════════
+     SCREEN 2: WAITING (Host waiting for peer)
+     ═══════════════════════════════════════════════════════════════ -->
+<div id="screen-waiting" class="hidden w-full max-w-md bg-white rounded-xl shadow-2xl p-6 border border-slate-300 text-center">
+    <div class="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-3">
+        <i class="fa-solid fa-hourglass-half text-2xl animate-pulse"></i>
+    </div>
+    <h2 class="text-lg font-semibold text-slate-800">Waiting for friend...</h2>
+    <p class="text-sm text-slate-500 mt-1 mb-4">Share this code — they'll join instantly</p>
 
-        function renderMessages() {
-            const container = document.getElementById('chat-messages');
-            let statusBar = `<div class="text-center my-2"><span class="bg-amber-100 text-amber-800 text-[11px] px-3 py-1 rounded-md shadow-sm border border-amber-200 inline-flex items-center gap-1.5"><i class="fa-solid fa-lock text-[10px]"></i> Room: #${escapeHtml(roomId)}</span></div>`;
+    <div class="bg-slate-50 border-2 border-dashed border-slate-300 rounded-lg py-4 mb-3">
+        <p id="waiting-code" class="text-3xl font-mono font-bold tracking-[0.4em] text-wa-teal">------</p>
+    </div>
 
-            if (messages.length === 0) {
-                container.innerHTML = statusBar + `<div class="text-center text-slate-500 text-xs py-8">No messages yet. Say hi!</div>`;
-                return;
-            }
+    <button onclick="copyRoomCode()"
+        class="w-full bg-wa-teal hover:bg-wa-accent text-white py-2.5 rounded-lg font-medium transition mb-2 active:scale-[0.98]">
+        <i class="fa-regular fa-copy mr-2"></i> Copy Code
+    </button>
+    <button onclick="copyShareLink()"
+        class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg font-medium transition mb-2 active:scale-[0.98]">
+        <i class="fa-solid fa-link mr-2"></i> Copy Share Link
+    </button>
+    <button onclick="cancelWaiting()"
+        class="w-full text-slate-500 text-sm py-2 hover:text-rose-600 transition">
+        <i class="fa-solid fa-xmark mr-1"></i> Cancel
+    </button>
+</div>
 
-            let html = statusBar;
-            messages.forEach(msg => {
-                const isMe = msg.senderId === myId;
-                const timeStr = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+<!-- ═══════════════════════════════════════════════════════════════
+     SCREEN 3: CHAT
+     ═══════════════════════════════════════════════════════════════ -->
+<div id="screen-chat" class="hidden w-full max-w-5xl h-full md:h-[95vh] bg-white rounded-none md:rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-300">
 
-                if (isMe) {
-                    html += `
-                        <div class="flex justify-end mb-2">
-                            <div class="relative bg-wa-outgoing text-slate-800 rounded-lg rounded-tr-none px-3 py-1.5 max-w-[75%] shadow-sm text-sm border border-emerald-100">
-                                <p class="break-words pr-12">${escapeHtml(msg.text)}</p>
-                                <div class="absolute bottom-1 right-2 flex items-center space-x-1 text-[10px] text-slate-500">
-                                    <span>${timeStr}</span>
-                                    <i class="fa-solid fa-check-double text-sky-600"></i>
-                                </div>
-                            </div>
-                        </div>`;
-                } else {
-                    html += `
-                        <div class="flex justify-start mb-2">
-                            <div class="relative bg-wa-incoming text-slate-800 rounded-lg rounded-tl-none px-3 py-1.5 max-w-[75%] shadow-sm text-sm border border-slate-200">
-                                <span class="text-[10px] font-semibold text-emerald-700 block mb-0.5">Friend</span>
-                                <p class="break-words pr-12">${escapeHtml(msg.text)}</p>
-                                <div class="absolute bottom-1 right-2 flex items-center space-x-1 text-[10px] text-slate-400">
-                                    <span>${timeStr}</span>
-                                </div>
-                            </div>
-                        </div>`;
-                }
+    <!-- Header -->
+    <header class="bg-wa-header border-b border-slate-300 px-4 py-2.5 flex items-center justify-between z-10 flex-shrink-0">
+        <div class="flex items-center space-x-3 min-w-0">
+            <div class="relative flex-shrink-0">
+                <div class="w-10 h-10 rounded-full bg-wa-teal text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                    <i class="fa-solid fa-user text-sm"></i>
+                </div>
+                <span id="peer-dot" class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
+            </div>
+            <div class="min-w-0">
+                <h2 class="font-semibold text-slate-800 text-sm md:text-base truncate">Friend</h2>
+                <p id="peer-status-text" class="text-xs text-emerald-600 truncate">Connected · P2P secured</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-1">
+            <button onclick="toggleNotifications()" id="notif-btn" title="Enable notifications"
+                class="p-2 hover:bg-slate-200/80 rounded-full transition text-slate-600">
+                <i id="notif-icon" class="fa-solid fa-bell-slash text-sm"></i>
+            </button>
+            <button onclick="clearChat()" title="Clear chat"
+                class="p-2 hover:bg-rose-100 text-rose-600 rounded-full transition">
+                <i class="fa-solid fa-trash-can text-sm"></i>
+            </button>
+            <button onclick="leaveChat()" title="Leave"
+                class="p-2 hover:bg-rose-100 text-rose-600 rounded-full transition">
+                <i class="fa-solid fa-right-from-bracket text-sm"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Messages -->
+    <main id="messages-container"
+        class="flex-1 overflow-y-auto chat-wallpaper p-4 space-y-1 flex flex-col"></main>
+
+    <!-- Footer -->
+    <footer class="bg-wa-header border-t border-slate-300 p-3 flex-shrink-0">
+        <form id="message-form" onsubmit="sendMessage(event)" class="flex items-center space-x-2">
+            <input id="message-input" type="text" placeholder="Type a message..." autocomplete="off"
+                class="flex-1 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-wa-teal focus:ring-1 focus:ring-wa-teal/30 transition text-slate-800">
+            <button type="submit"
+                class="bg-wa-teal hover:bg-wa-accent text-white w-10 h-10 rounded-full flex items-center justify-center transition shadow-md flex-shrink-0 active:scale-95">
+                <i class="fa-solid fa-paper-plane text-sm"></i>
+            </button>
+        </form>
+    </footer>
+</div>
+
+<!-- Toasts -->
+<div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex flex-col gap-2 items-center"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════════════ */
+const STATE = {
+    peer:        null,
+    conn:        null,
+    isHost:      false,
+    roomCode:    null,
+    myId:        'user_' + Math.random().toString(36).substring(2, 9),
+    messages:    [],
+    peerOnline:  false,
+    notifOn:     false,
+    typingTimer: null,
+    peerTypingTimer: null,
+    peerIsTyping: false
+};
+
+const SEEN_IDS = new Set();
+
+/* ═══════════════════════════════════════════════════════════════
+   ICE SERVERS (STUN + free TURN for strict NATs)
+   ═══════════════════════════════════════════════════════════════ */
+const ICE_CONFIG = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }
+    ],
+    iceCandidatePoolSize: 10
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   UI HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+function showScreen(name) {
+    ['lobby', 'waiting', 'chat'].forEach(s => {
+        document.getElementById('screen-' + s).classList.toggle('hidden', s !== name);
+    });
+}
+
+function toast(msg, type = 'info') {
+    const colors = {
+        info:    'bg-slate-800',
+        success: 'bg-emerald-600',
+        error:   'bg-rose-600',
+        warn:    'bg-amber-600'
+    };
+    const el = document.createElement('div');
+    el.className = `${colors[type]} text-white text-sm px-4 py-2 rounded-lg shadow-lg pointer-events-auto msg-in`;
+    el.innerHTML = escapeHtml(msg);
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => {
+        el.style.transition = 'opacity .3s';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+    }, 2500);
+}
+
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ROOM CODE GENERATOR
+   ═══════════════════════════════════════════════════════════════ */
+function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I,O,0,1
+    let code = '';
+    const arr = new Uint32Array(6);
+    crypto.getRandomValues(arr);
+    for (let i = 0; i < 6; i++) code += chars[arr[i] % chars.length];
+    return code;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HOST — Create room
+   ═══════════════════════════════════════════════════════════════ */
+window.createRoom = function () {
+    STATE.roomCode = generateRoomCode();
+    STATE.isHost = true;
+
+    showScreen('waiting');
+    document.getElementById('waiting-code').innerText = STATE.roomCode;
+
+    // Unique peer ID for this room's host
+    const hostId = 'p2pchat-' + STATE.roomCode + '-host';
+
+    STATE.peer = new Peer(hostId, {
+        debug: 1,
+        config: ICE_CONFIG
+    });
+
+    STATE.peer.on('open', id => {
+        console.log('[HOST] Ready:', id);
+        // Update URL so refresh keeps room (optional)
+        try {
+            const u = new URL(window.location.href);
+            u.searchParams.set('room', STATE.roomCode);
+            history.replaceState({}, '', u);
+        } catch (_) {}
+    });
+
+    STATE.peer.on('connection', incoming => {
+        if (STATE.conn && STATE.conn.open) {
+            // Room already has a peer — reject extra connections
+            incoming.close();
+            return;
+        }
+        STATE.conn = incoming;
+        setupConnection();
+    });
+
+    STATE.peer.on('error', err => {
+        console.error('[HOST] Peer error:', err);
+        if (err.type === 'unavailable-id') {
+            // Rare collision — retry with new code
+            STATE.peer.destroy();
+            STATE.peer = null;
+            toast('Room code collision, retrying...', 'warn');
+            setTimeout(createRoom, 800);
+        } else if (err.type === 'network' || err.type === 'server-error') {
+            toast('Connection issue. Retrying...', 'warn');
+        }
+    });
+
+    STATE.peer.on('disconnected', () => {
+        console.warn('[HOST] Disconnected from signaling server');
+        try { STATE.peer.reconnect(); } catch (_) {}
+    });
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   GUEST — Join room
+   ═══════════════════════════════════════════════════════════════ */
+window.joinRoom = function () {
+    const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+    if (code.length !== 6) {
+        toast('Enter a valid 6-character code.', 'error');
+        return;
+    }
+    STATE.roomCode = code;
+    STATE.isHost = false;
+
+    showScreen('waiting');
+    document.getElementById('waiting-code').innerText = code;
+    document.getElementById('waiting-code').classList.add('opacity-40');
+    document.querySelector('#screen-waiting h2').innerText = 'Connecting...';
+
+    STATE.peer = new Peer({
+        debug: 1,
+        config: ICE_CONFIG
+    });
+
+    STATE.peer.on('open', () => {
+        console.log('[GUEST] Connecting to host...');
+        STATE.conn = STATE.peer.connect('p2pchat-' + STATE.roomCode + '-host', {
+            reliable: true,
+            serialization: 'json'
+        });
+        setupConnection();
+    });
+
+    STATE.peer.on('error', err => {
+        console.error('[GUEST] Peer error:', err);
+        if (err.type === 'peer-unavailable') {
+            toast('Room not found. Check the code.', 'error');
+            resetToLobby();
+        } else if (err.type === 'network' || err.type === 'server-error') {
+            toast('Network issue. Try again.', 'error');
+            resetToLobby();
+        }
+    });
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   CONNECTION SETUP (both host & guest)
+   ═══════════════════════════════════════════════════════════════ */
+function setupConnection() {
+    const connTimeout = setTimeout(() => {
+        if (!STATE.conn || !STATE.conn.open) {
+            toast('Connection timed out.', 'error');
+            resetToLobby();
+        }
+    }, 25000);
+
+    STATE.conn.on('open', () => {
+        clearTimeout(connTimeout);
+        console.log('✅ P2P connected');
+        STATE.peerOnline = true;
+        showScreen('chat');
+        updatePeerStatus(true);
+        document.getElementById('message-input').focus();
+
+        // Handshake
+        safeSend({ type: 'hello', senderId: STATE.myId });
+    });
+
+    STATE.conn.on('data', data => handleIncoming(data));
+
+    STATE.conn.on('close', () => {
+        STATE.peerOnline = false;
+        updatePeerStatus(false);
+        pushSystemMessage('Friend disconnected');
+    });
+
+    STATE.conn.on('error', err => console.error('Conn error:', err));
+}
+
+function safeSend(obj) {
+    if (STATE.conn && STATE.conn.open) {
+        try { STATE.conn.send(obj); } catch (e) { console.error('Send fail:', e); }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INCOMING MESSAGES
+   ═══════════════════════════════════════════════════════════════ */
+function handleIncoming(data) {
+    if (!data || typeof data !== 'object') return;
+
+    switch (data.type) {
+        case 'hello':
+            // First contact established
+            break;
+
+        case 'msg': {
+            if (!data.id || SEEN_IDS.has(data.id)) return;
+            SEEN_IDS.add(data.id);
+            STATE.messages.push({
+                id: data.id,
+                text: String(data.text || '').slice(0, 5000),
+                senderId: 'peer',
+                createdAt: data.createdAt || Date.now(),
+                delivered: true
             });
-
-            container.innerHTML = html;
-            container.scrollTop = container.scrollHeight;
+            renderMessages();
+            safeSend({ type: 'ack', id: data.id });
+            notifyIncoming(data.text);
+            break;
         }
 
-        window.handleSend = async function(e) {
-            e.preventDefault();
-            const input = document.getElementById('message-input');
-            const text = input.value.trim();
-            if (!text) return;
-
-            input.value = '';
-
-            const msgData = {
-                id: Math.random().toString(36.2) + Date.now(),
-                text: text,
-                senderId: myId,
-                createdAt: Date.now()
-            };
-
-            // Optimistically add to own screen immediately
-            messages.push(msgData);
-            renderMessages();
-
-            // Send to cloud real-time channel
-            try {
-                await fetch(pubUrl, {
-                    method: 'POST',
-                    body: JSON.stringify(msgData)
-                });
-            } catch (err) {
-                console.error("Send error:", err);
-            }
-        };
-
-        window.clearAllMessages = function() {
-            if (!confirm("Clear messages on your screen?")) return;
-            messages = [];
-            renderMessages();
-        };
-
-        window.promptChangeRoom = function() {
-            const r = prompt("Enter Room Name:", roomId);
-            if (r) {
-                window.location.search = `?room=${r.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')}`;
-            }
-        };
-
-        window.copyRoomLink = function() {
-            navigator.clipboard.writeText(window.location.href);
-            alert("Room link copied! Send this link to your friend.");
-        };
-
-        function escapeHtml(str) {
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        case 'ack': {
+            const m = STATE.messages.find(x => x.id === data.id);
+            if (m) { m.delivered = true; renderMessages(); }
+            break;
         }
-    </script>
+
+        case 'typing': {
+            STATE.peerIsTyping = !!data.on;
+            clearTimeout(STATE.peerTypingTimer);
+            if (data.on) {
+                STATE.peerTypingTimer = setTimeout(() => {
+                    STATE.peerIsTyping = false;
+                    renderMessages();
+                }, 3000);
+            }
+            renderMessages();
+            break;
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SEND MESSAGE
+   ═══════════════════════════════════════════════════════════════ */
+window.sendMessage = function (e) {
+    e.preventDefault();
+    const input = document.getElementById('message-input');
+    const text = input.value.trim();
+    if (!text) return;
+    if (!STATE.conn || !STATE.conn.open) {
+        toast('Not connected to friend.', 'error');
+        return;
+    }
+
+    input.value = '';
+    safeSend({ type: 'typing', on: false });
+
+    const msg = {
+        type: 'msg',
+        id: 'm_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+        text: text,
+        createdAt: Date.now()
+    };
+
+    SEEN_IDS.add(msg.id);
+    STATE.messages.push({
+        id: msg.id,
+        text: msg.text,
+        senderId: STATE.myId,
+        createdAt: msg.createdAt,
+        delivered: false
+    });
+    renderMessages();
+    safeSend(msg);
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   TYPING INDICATOR
+   ═══════════════════════════════════════════════════════════════ */
+document.getElementById('message-input')?.addEventListener('input', () => {
+    if (!STATE.conn || !STATE.conn.open) return;
+    safeSend({ type: 'typing', on: true });
+    clearTimeout(STATE.typingTimer);
+    STATE.typingTimer = setTimeout(() => {
+        safeSend({ type: 'typing', on: false });
+    }, 1500);
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   RENDER MESSAGES
+   ═══════════════════════════════════════════════════════════════ */
+function renderMessages() {
+    const c = document.getElementById('messages-container');
+    if (!c) return;
+
+    let html = '';
+
+    if (STATE.messages.length === 0) {
+        html = `
+            <div class="text-center text-slate-500 text-xs py-12 flex flex-col items-center gap-2">
+                <i class="fa-solid fa-lock text-3xl text-emerald-600 mb-1"></i>
+                <p class="font-medium text-slate-600">Secure P2P connection</p>
+                <p>Messages are never stored on any server.</p>
+            </div>`;
+    } else {
+        let lastSender = null;
+        for (const msg of STATE.messages) {
+            if (msg.system) {
+                html += `<div class="text-center my-2 msg-in"><span class="bg-slate-200/80 text-slate-600 text-[11px] px-3 py-1 rounded-md">${escapeHtml(msg.text)}</span></div>`;
+                lastSender = null;
+                continue;
+            }
+
+            const isMe = msg.senderId === STATE.myId;
+            const timeStr = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const tick = msg.delivered
+                ? '<i class="fa-solid fa-check-double text-sky-600"></i>'
+                : '<i class="fa-solid fa-check text-slate-400"></i>';
+
+            html += isMe ? `
+                <div class="flex justify-end mb-1.5 msg-in">
+                    <div class="relative bg-wa-outgoing text-slate-800 rounded-lg rounded-tr-none px-3 py-1.5 max-w-[75%] shadow-sm text-sm border border-emerald-100">
+                        <p class="break-words pr-14 whitespace-pre-wrap">${escapeHtml(msg.text)}</p>
+                        <div class="absolute bottom-1 right-2 flex items-center space-x-1 text-[10px] text-slate-500">
+                            <span>${timeStr}</span>${tick}
+                        </div>
+                    </div>
+                </div>` : `
+                <div class="flex justify-start mb-1.5 msg-in">
+                    <div class="relative bg-wa-incoming text-slate-800 rounded-lg rounded-tl-none px-3 py-1.5 max-w-[75%] shadow-sm text-sm border border-slate-200">
+                        <p class="break-words pr-14 whitespace-pre-wrap">${escapeHtml(msg.text)}</p>
+                        <div class="absolute bottom-1 right-2 text-[10px] text-slate-400">${timeStr}</div>
+                    </div>
+                </div>`;
+        }
+    }
+
+    // Typing indicator
+    if (STATE.peerIsTyping) {
+        html += `
+            <div class="flex justify-start mb-1.5">
+                <div class="bg-wa-incoming rounded-lg rounded-tl-none px-4 py-2.5 shadow-sm border border-slate-200 flex items-center gap-1">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </div>
+            </div>`;
+    }
+
+    c.innerHTML = html;
+    c.scrollTop = c.scrollHeight;
+}
+
+function pushSystemMessage(text) {
+    STATE.messages.push({
+        id: 'sys_' + Date.now() + Math.random(),
+        system: true,
+        text: text
+    });
+    renderMessages();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PEER STATUS
+   ═══════════════════════════════════════════════════════════════ */
+function updatePeerStatus(online) {
+    const text = document.getElementById('peer-status-text');
+    const dot = document.getElementById('peer-dot');
+    if (!text || !dot) return;
+
+    if (online) {
+        text.innerText = 'Connected · P2P secured';
+        text.className = 'text-xs text-emerald-600 truncate';
+        dot.className = 'absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full';
+    } else {
+        text.innerText = 'Disconnected';
+        text.className = 'text-xs text-rose-600 truncate';
+        dot.className = 'absolute bottom-0 right-0 w-3 h-3 bg-rose-500 border-2 border-white rounded-full';
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ACTIONS
+   ═══════════════════════════════════════════════════════════════ */
+window.copyRoomCode = async function () {
+    try {
+        await navigator.clipboard.writeText(STATE.roomCode);
+        toast('Code copied: ' + STATE.roomCode, 'success');
+    } catch {
+        prompt('Copy this code:', STATE.roomCode);
+    }
+};
+
+window.copyShareLink = async function () {
+    const u = new URL(window.location.href);
+    u.searchParams.set('room', STATE.roomCode);
+    try {
+        await navigator.clipboard.writeText(u.toString());
+        toast('Share link copied!', 'success');
+    } catch {
+        prompt('Copy this link:', u.toString());
+    }
+};
+
+window.cancelWaiting = function () {
+    resetToLobby();
+};
+
+window.leaveChat = function () {
+    if (!confirm('Leave this chat?')) return;
+    try {
+        if (STATE.conn && STATE.conn.open) {
+            safeSend({ type: 'bye' });
+            STATE.conn.close();
+        }
+    } catch (_) {}
+    resetToLobby();
+};
+
+function resetToLobby() {
+    try { STATE.conn && STATE.conn.close(); } catch (_) {}
+    try { STATE.peer && STATE.peer.destroy(); } catch (_) {}
+    STATE.conn = null;
+    STATE.peer = null;
+    STATE.roomCode = null;
+    STATE.messages = [];
+    STATE.peerOnline = false;
+    STATE.peerIsTyping = false;
+    SEEN_IDS.clear();
+
+    showScreen('lobby');
+    document.getElementById('join-code-input').value = '';
+    document.getElementById('waiting-code').innerText = '------';
+    document.getElementById('waiting-code').classList.remove('opacity-40');
+    document.querySelector('#screen-waiting h2').innerText = 'Waiting for friend...';
+
+    // Clean URL
+    try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('room');
+        history.replaceState({}, '', u);
+    } catch (_) {}
+}
+
+window.clearChat = function () {
+    if (!confirm('Clear messages on your screen?')) return;
+    STATE.messages = [];
+    renderMessages();
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   NOTIFICATIONS
+   ═══════════════════════════════════════════════════════════════ */
+window.toggleNotifications = async function () {
+    if (!('Notification' in window)) {
+        toast('Notifications not supported.', 'error');
+        return;
+    }
+
+    if (Notification.permission === 'granted') {
+        STATE.notifOn = !STATE.notifOn;
+    } else {
+        const perm = await Notification.requestPermission();
+        if (perm === 'granted') {
+            STATE.notifOn = true;
+            toast('Notifications enabled', 'success');
+        } else {
+            toast('Notifications blocked', 'warn');
+            return;
+        }
+    }
+
+    const icon = document.getElementById('notif-icon');
+    if (icon) {
+        icon.className = STATE.notifOn
+            ? 'fa-solid fa-bell text-sm'
+            : 'fa-solid fa-bell-slash text-sm';
+    }
+};
+
+function notifyIncoming(text) {
+    if (!STATE.notifOn) return;
+    if (document.visibilityState === 'visible') return;
+    try {
+        new Notification('New message', {
+            body: text.substring(0, 100),
+            icon: 'https://cdn-icons-png.flaticon.com/512/733/733585.png',
+            tag: 'p2pchat'
+        });
+    } catch (_) {}
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AUTO-JOIN FROM URL (?room=CODE)
+   ═══════════════════════════════════════════════════════════════ */
+(function autoJoin() {
+    try {
+        const code = new URL(window.location.href).searchParams.get('room');
+        if (code && /^[A-Z0-9]{6}$/i.test(code)) {
+            document.getElementById('join-code-input').value = code.toUpperCase();
+            toast('Room code detected — click Join', 'info');
+        }
+    } catch (_) {}
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+   ═══════════════════════════════════════════════════════════════ */
+document.getElementById('join-code-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); joinRoom(); }
+});
+
+// Warn before closing mid-chat
+window.addEventListener('beforeunload', e => {
+    if (STATE.conn && STATE.conn.open) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+// Handle connection drops gracefully
+window.addEventListener('online', () => {
+    if (STATE.peer && !STATE.peer.destroyed && STATE.peer.disconnected) {
+        try { STATE.peer.reconnect(); } catch (_) {}
+    }
+});
+
+console.log('%c💬 P2P Chat ready', 'color:#008069;font-weight:bold;font-size:14px');
+console.log('My ID:', STATE.myId);
+</script>
 </body>
 </html>
